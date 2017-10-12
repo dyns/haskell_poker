@@ -47,11 +47,20 @@ betRound game@(Game hands board deck pot pots) littleBlind = do
     return game
 
 
-askMoney2 playerCount = askMoneyLoop playerCount  [show x | x <- [1 .. playerCount]]
+askMoney2 playerCount littleBlind = askMoneyLoop playerCount  [show x | x <- [1 .. playerCount]] littleBlind False []
 
-askMoneyLoop count names0 | count > 0 = do
+{-
+askMoneyLoopBlinds count names blindStart = do
+        littleBlind <- askMoney ((head names) ++ " (min littleBlind)")
+        bigBlind <- askMoney ((head $ tail names) ++ " min (big blind)")
+        askMoneyLoop count names
+-}
+
+
+askMoneyLoop count names0 littleBlind blindFound carry
+                                   | count > 0 = do
                         amount <- askMoney name
-                        rest <- (askMoneyLoop (count - 1) names)
+                        rest <- (askMoneyLoop (count - 1) names littleBlind blindFound carry)
                         return $ amount : rest
                                    | otherwise = do
                                         return []
@@ -78,7 +87,7 @@ main = do
     else do
         game <- return $ Game [] [] deck (Pot 0) $ mk_pots playerCount
         game <- return $ deal playerCount game
-        a <- askMoney2 playerCount
+        a <- askMoney2 playerCount playerCount
         print a
         game <- return $ flop game
         game <- return $ turn game
