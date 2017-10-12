@@ -24,15 +24,20 @@ type Hands = [Deck]
 type Board = Deck
 data Pot v = Pot v deriving Show
 type Pots v = [Pot v]
+data CardState = CardState Hands Board Deck deriving Show
+ -- data PotState v = PotState (Pot v) deriving Show
+data Game v = Game Integer CardState (Pot v) (Players v) deriving Show
+data Player v = Player String (Pot v) deriving Show
+type Players v = [Player v]
 
-data Game v = Game Hands Board Deck (Pot v) (Pots v) deriving Show
+deal game@(Game count _ _ _) = dealHelper count game
 
-deal playerCount game@(Game hands board deck pot pots) | playerCount > 0 = 
+dealHelper count game@(Game playerCount (CardState hands board deck) pot players) | count > 0 = 
     let (hand, deck0) = (take 2 deck, drop 2 deck) 
-        in deal (playerCount - 1) (Game (hand:hands) board deck0 pot pots) --(deal (playerCount - 1)  (Game (hand:hands) board deck))
+        in dealHelper (count - 1) (Game playerCount (CardState (hand:hands) board deck0) pot players) --(deal (playerCount - 1)  (Game (hand:hands) board deck))
     | otherwise = game
 
-placeCard cardCount (Game hands board deck0 pot pots) = let deck = (tail deck0) in Game hands (board ++ (take cardCount deck)) (drop cardCount deck) pot pots
+placeCard cardCount (Game ppcount (CardState hands board deck0) pot players) = let deck = (tail deck0) in Game ppcount (CardState hands (board ++ (take cardCount deck)) (drop cardCount deck)) pot players
 
 flop = placeCard 3
 turn = placeCard 1
@@ -43,22 +48,20 @@ mk_pots count = replicate count $ Pot 100
 bet = 4
 littleBet = bet / 2
 
-betRound game@(Game hands board deck pot pots) count names blindStart = do
-    mBets <- askMoneyLoopBlinds count names blindStart
-    printC "bets: "
-    print mBets
+betRound game blindStart = do
+    mBets <- askMoneyLoopBlinds game blindStart  
     return game
 
 genNames count = [show x | x <- [1 .. count]]
 
-betOrder names playerCount littleBlind = testBu names littleBlind [] 1 playerCount
+betOrder players playerCount littleBlind = testBu players littleBlind [] 1 playerCount
 
-testBu names little carry index total | index < little = testBu (drop 1 names) little (carry ++ (take 1 names)) (index + 1) total
+testBu players little carry index total | index < little = testBu (drop 1 players) little (carry ++ (take 1 players)) (index + 1) total
     | index == (total + 1) = carry
-    | otherwise = (take 1 names) ++ (testBu (drop 1 names) little carry (index + 1) total)
+    | otherwise = (take 1 players) ++ (testBu (drop 1 players) little carry (index + 1) total)
 
-askMoneyLoopBlinds count names0 blindStart = do
-        names <- return $ betOrder names0 count blindStart
+askMoneyLoopBlinds game@(Game count _ _ players0) blindStart = do
+        players <- return $ betOrder players0 count blindStart
         {-
         printC "count "
         print count
@@ -69,45 +72,52 @@ askMoneyLoopBlinds count names0 blindStart = do
         printC "reorder names: "
         print names
         -}
-        littleBlind <- askMoney ((head names) ++ " (min littleBlind)")
-        bigBlind <- askMoney ((head $ tail names) ++ " min (big blind)")
-        rest <- (askMoneyLoop (count - 2) names)
+        littleBlind <- askMoney (head players)  " is little blind, min x"
+        bigBlind <- askMoney (head $ tail players) " is big blind min (big blind)"
+        rest <- (askMoneyLoop (count - 2) players)
         return (littleBlind : bigBlind : rest)
 
-askMoneyLoop count names0 
+askMoneyLoop count players0 
                                    | count > 0 = do
-                        amount <- askMoney name
-                        rest <- (askMoneyLoop (count - 1) names)
+                        amount <- askMoney player "how much do you want to bet?"
+                        rest <- (askMoneyLoop (count - 1) players)
                         return $ amount : rest
                                    | otherwise = do
                                         return []
                         where
-                         names = tail names0
-                         name = head names0
+                         players = tail players0
+                         player = head players0
 
-askMoney player = do
-    printC player
-    print " how much do you want to bet?"
+askMoney player@(Player name (Pot pot)) text = do
+    printC name
+    printC " "
+    print text
     line <- getLine
     amount <- return (read line :: Integer)
-    return amount
+    if amount <= pot then
+        return amount
+    else do
+        print "not enough funds" 
+        askMoney player text
+
+mk_players count = [ Player "a" pot | pot <- (mk_pots $ fromIntegral count)]
 
 main = do
     randomGen <- getStdGen
     deck <- return $ mk_deck randomGen
     print "how many players?"
     pl <- getLine
-    playerCount <- return (read pl :: Int)
+    playerCount <- return (read pl :: Integer)
 
     if playerCount > 22
         then print "max players is 22"
     else do
-        game <- return $ Game [] [] deck (Pot 0) $ mk_pots playerCount
-        game <- return $ deal playerCount game
-        game <- betRound game playerCount (genNames playerCount) 4
+        game <- return $ Game playerCount (CardState [] [] deck) (Pot 0) (mk_players playerCount)
+        game <- return $ deal game
+        game <- betRound game 4
         game <- return $ flop game
         game <- return $ turn game
-        (Game hands board deck pot pots) <- return (river game)
+        (Game count (CardState hands board deck) pot players) <- return (river game)
         print board
 
 
