@@ -43,24 +43,41 @@ mk_pots count = replicate count $ Pot 100
 bet = 4
 littleBet = bet / 2
 
-betRound game@(Game hands board deck pot pots) littleBlind = do
+betRound game@(Game hands board deck pot pots) count names blindStart = do
+    mBets <- askMoneyLoopBlinds count names blindStart
+    printC "bets: "
+    print mBets
     return game
 
+genNames count = [show x | x <- [1 .. count]]
 
-askMoney2 playerCount littleBlind = askMoneyLoop playerCount  [show x | x <- [1 .. playerCount]] littleBlind False []
+betOrder names playerCount littleBlind = testBu names littleBlind [] 1 playerCount
 
-{-
-askMoneyLoopBlinds count names blindStart = do
+testBu names little carry index total | index < little = testBu (drop 1 names) little (carry ++ (take 1 names)) (index + 1) total
+    | index == (total + 1) = carry
+    | otherwise = (take 1 names) ++ (testBu (drop 1 names) little carry (index + 1) total)
+
+askMoneyLoopBlinds count names0 blindStart = do
+        names <- return $ betOrder names0 count blindStart
+        {-
+        printC "count "
+        print count
+        printC "blindStart "
+        print blindStart
+        printC "orig names "
+        print names0
+        printC "reorder names: "
+        print names
+        -}
         littleBlind <- askMoney ((head names) ++ " (min littleBlind)")
         bigBlind <- askMoney ((head $ tail names) ++ " min (big blind)")
-        askMoneyLoop count names
--}
+        rest <- (askMoneyLoop (count - 2) names)
+        return (littleBlind : bigBlind : rest)
 
-
-askMoneyLoop count names0 littleBlind blindFound carry
+askMoneyLoop count names0 
                                    | count > 0 = do
                         amount <- askMoney name
-                        rest <- (askMoneyLoop (count - 1) names littleBlind blindFound carry)
+                        rest <- (askMoneyLoop (count - 1) names)
                         return $ amount : rest
                                    | otherwise = do
                                         return []
@@ -87,12 +104,12 @@ main = do
     else do
         game <- return $ Game [] [] deck (Pot 0) $ mk_pots playerCount
         game <- return $ deal playerCount game
-        a <- askMoney2 playerCount playerCount
-        print a
+        game <- betRound game playerCount (genNames playerCount) 4
         game <- return $ flop game
         game <- return $ turn game
         (Game hands board deck pot pots) <- return (river game)
         print board
+
 
 {- select amount of players
         - deal 2 to each
