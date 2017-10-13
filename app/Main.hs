@@ -3,6 +3,7 @@ module Main where
 import Lib
 import System.Random.Shuffle
 import System.Random
+import qualified Data.Map.Strict as Map
 
 main :: IO ()
 
@@ -22,13 +23,13 @@ printC a = putStr . show $ a
 
 type Hands = [Deck]
 type Board = Deck
-data Pot v = Pot v deriving Show
+data Pot v = Pot v deriving (Show, Eq)
 type Pots v = [Pot v]
 data CardState = CardState Hands Board Deck deriving Show
- -- data PotState v = PotState (Pot v) deriving Show
 data Game v = Game Integer CardState (Pot v) (Players v) deriving Show
-data Player v = Player String (Pot v) deriving Show
-type Players v = [Player v]
+data Player v = Player String (Pot v) deriving (Show, Eq)
+--type Players v = [Player v]
+type Players v = Map.Map Integer (Player v)
 
 deal game@(Game count _ _ _) = dealHelper count game
 
@@ -49,58 +50,58 @@ bet = 4
 littleBet = bet / 2
 
 betRound game blindStart = do
-    mBets <- askMoneyLoopBlinds game blindStart  
-    return game
+    askMoneyLoopBlinds game blindStart  
 
 genNames count = [show x | x <- [1 .. count]]
 
-betOrder players playerCount littleBlind = testBu players littleBlind [] 1 playerCount
+--betOrder players playerCount littleBlind = testBu players littleBlind [] 1 playerCount
+
+betOrder blindStart count0 = let count = fromIntegral count0 in [ toInteger x | x <- [blindStart .. count] ++ (take (blindStart - 1) (iterate ((+) 1) 1))]
 
 testBu players little carry index total | index < little = testBu (drop 1 players) little (carry ++ (take 1 players)) (index + 1) total
     | index == (total + 1) = carry
     | otherwise = (take 1 players) ++ (testBu (drop 1 players) little carry (index + 1) total)
 
 askMoneyLoopBlinds game@(Game count _ _ players0) blindStart = do
-        players <- return $ betOrder players0 count blindStart
-        {-
-        printC "count "
-        print count
-        printC "blindStart "
-        print blindStart
-        printC "orig names "
-        print names0
-        printC "reorder names: "
-        print names
-        -}
-        littleBlind <- askMoney (head players)  " is little blind, min x"
-        bigBlind <- askMoney (head $ tail players) " is big blind min (big blind)"
-        rest <- (askMoneyLoop (count - 2) players)
-        return (littleBlind : bigBlind : rest)
+        order <- return $ betOrder blindStart count 
+        printC "this is the order: "
+        print order
+        game <- askMoney (head order) game " is little blind, min x"
+        game <- askMoney (head $ tail order) game " is big blind min (big blind)"
+        order <- return (drop 2 order)
+        game <- (askMoneyLoop game order)
+        return game
 
-askMoneyLoop count players0 
-                                   | count > 0 = do
-                        amount <- askMoney player "how much do you want to bet?"
-                        rest <- (askMoneyLoop (count - 1) players)
-                        return $ amount : rest
-                                   | otherwise = do
-                                        return []
-                        where
-                         players = tail players0
-                         player = head players0
+askMoneyLoop game [] = do return game
+askMoneyLoop game order =  do
+                        game <- askMoney (head order) game "how much do you want to bet?"
+                        game <- (askMoneyLoop game (tail order))
+                        return game
 
-askMoney player@(Player name (Pot pot)) text = do
-    printC name
-    printC " "
-    print text
-    line <- getLine
-    amount <- return (read line :: Integer)
-    if amount <= pot then
-        return amount
+askMoney index game@(Game g1 g2 g3 players) text = do
+
+    player <- return $ Map.lookup index players
+    if player == Nothing
+        then do
+            printC "bad index: "
+            printC index
+            print "   error: invalid player index"
+            return game
     else do
-        print "not enough funds" 
-        askMoney player text
+        (Just (Player name (Pot pot))) <- return player 
+        printC name
+        print text
+        line <- getLine
+        amount <- return (read line :: Integer)
+        if amount <= pot then do
+            player3 <- return (Player name (Pot (pot - amount)))
+            players3 <- return $ Map.insert index player3 players
+            return (Game g1 g2 g3 players3)
+        else do
+            print "not enough funds, please enter another amount" 
+            askMoney index game text
 
-mk_players count = [ Player "a" pot | pot <- (mk_pots $ fromIntegral count)]
+mk_players count = Map.fromList [tp | tp <- zip [1 .. count] [Player (show pIndex) pot | (pIndex, pot) <- zip [1 .. count] (mk_pots $ fromIntegral count) ]]
 
 main = do
     randomGen <- getStdGen
@@ -112,13 +113,13 @@ main = do
     if playerCount > 22
         then print "max players is 22"
     else do
-        game <- return $ Game playerCount (CardState [] [] deck) (Pot 0) (mk_players playerCount)
+        game <- return $ Game playerCount (CardState [] [] deck) (Pot 0) $ mk_players playerCount
         game <- return $ deal game
         game <- betRound game 4
         game <- return $ flop game
         game <- return $ turn game
         (Game count (CardState hands board deck) pot players) <- return (river game)
-        print board
+        print players 
 
 
 {- select amount of players
