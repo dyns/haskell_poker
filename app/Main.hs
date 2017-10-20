@@ -7,13 +7,19 @@ import qualified Data.Map.Strict as Map
 
 main :: IO ()
 
-data Suite = Heart | Diamond | Spade | Club deriving (Show, Enum)
-
+data Suite = Heart | Diamond | Spade | Club deriving (Show, Enum, Eq)
 data CardVal = Two | Three | Four | Five | Six | Seven | Eight | Nine | Ten | Jack | Queen | King | Ace deriving (Show, Eq, Ord, Enum)
-
-data Card = Card CardVal Suite deriving (Show)
-
+data Card = Card CardVal Suite deriving (Show, Eq)
 type Deck = [Card]
+type PlayerCount = Integer
+type Hands = [Deck]
+type Board = Deck
+data Pot v = Pot v deriving (Show, Eq)
+type Pots v = [Pot v]
+data CardState = CardState Hands Board Deck deriving Show
+data Game v = Game PlayerCount CardState (Pot v) (Players v) deriving Show
+data Player v = Player String Deck (Pot v) deriving (Show, Eq)
+type Players v = Map.Map Integer (Player v)
 
 mk_deck_order = pure Card <*> enumFrom Two <*> enumFrom Heart
 
@@ -21,22 +27,14 @@ mk_deck = shuffle' mk_deck_order 52
 
 printC a = putStr . show $ a
 
-type Hands = [Deck]
-type Board = Deck
-data Pot v = Pot v deriving (Show, Eq)
-type Pots v = [Pot v]
-data CardState = CardState Hands Board Deck deriving Show
-data Game v = Game Integer CardState (Pot v) (Players v) deriving Show
-data Player v = Player String (Pot v) deriving (Show, Eq)
---type Players v = [Player v]
-type Players v = Map.Map Integer (Player v)
+--deal game = game
 
-deal game@(Game count _ _ _) = dealHelper count game
+deal game@(Game count (CardState hands board deck) pot players) = (Game count (CardState hands board (drop (fromIntegral (count * 2)) deck)) pot (Map.fromList (dealHelper (map id (Map.toList players)) deck)))
 
-dealHelper count game@(Game playerCount (CardState hands board deck) pot players) | count > 0 = 
-    let (hand, deck0) = (take 2 deck, drop 2 deck) 
-        in dealHelper (count - 1) (Game playerCount (CardState (hand:hands) board deck0) pot players) --(deal (playerCount - 1)  (Game (hand:hands) board deck))
-    | otherwise = game
+
+
+dealHelper ((pos, (Player name hand0 pot)) : players) deck = (pos, (Player name (take 2 deck) pot)) :  dealHelper (tail players) (drop 2 deck)
+dealHelper _ deck = []
 
 placeCard cardCount (Game ppcount (CardState hands board deck0) pot players) = let deck = (tail deck0) in Game ppcount (CardState hands (board ++ (take cardCount deck)) (drop cardCount deck)) pot players
 
@@ -88,24 +86,33 @@ askMoney index game@(Game g1 g2 g3 players) text = do
             print "   error: invalid player index"
             return game
     else do
-        (Just (Player name (Pot pot))) <- return player 
+        (Just (Player name hand (Pot pot))) <- return player 
         printC name
         print text
         line <- getLine
         amount <- return (read line :: Integer)
         if amount <= pot then do
-            player3 <- return (Player name (Pot (pot - amount)))
+            player3 <- return (Player name hand (Pot (pot - amount)))
             players3 <- return $ Map.insert index player3 players
             return (Game g1 g2 g3 players3)
         else do
             print "not enough funds, please enter another amount" 
             askMoney index game text
 
-mk_players count = Map.fromList [tp | tp <- zip [1 .. count] [Player (show pIndex) pot | (pIndex, pot) <- zip [1 .. count] (mk_pots $ fromIntegral count) ]]
+mk_players count = Map.fromList [tp | tp <- zip [1 .. count] [Player (show pIndex) [] pot | (pIndex, pot) <- zip [1 .. count] (mk_pots $ fromIntegral count) ]]
+
+mk_game playerCount = do
+    deck <- mk_random_deck
+    return $ Game playerCount (CardState [] [] deck) (Pot 0) $ mk_players playerCount
+
+mk_random_deck = do
+    random <- getStdGen
+    return $ mk_deck random
+    
+showHands game@(Game count (CardState hands board deck) pot players) = do
+    return 1
 
 main = do
-    randomGen <- getStdGen
-    deck <- return $ mk_deck randomGen
     print "how many players?"
     pl <- getLine
     playerCount <- return (read pl :: Integer)
@@ -113,8 +120,9 @@ main = do
     if playerCount > 22
         then print "max players is 22"
     else do
-        game <- return $ Game playerCount (CardState [] [] deck) (Pot 0) $ mk_players playerCount
+        game <- mk_game playerCount
         game <- return $ deal game
+        showHands game
         game <- betRound game 4
         game <- return $ flop game
         game <- return $ turn game
