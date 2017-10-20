@@ -1,6 +1,6 @@
-#Text based Texas Hold'em implementation in Haskell.
+# Text based Texas Hold'em implementation in Haskell.
 
-###Todo:
+### Todo:
 - Finish betting round implementation
 - Move code into Lib
 - Add best hand
