@@ -16,7 +16,7 @@ type Hands = [Deck]
 type Board = Deck
 data Pot v = Pot v deriving (Show, Eq)
 type Pots v = [Pot v]
-data CardState = CardState Hands Board Deck deriving Show
+data CardState = CardState Board Deck deriving Show
 data Game v = Game PlayerCount CardState (Pot v) (Players v) deriving Show
 data Player v = Player String Deck (Pot v) deriving (Show, Eq)
 type Players v = Map.Map Integer (Player v)
@@ -27,16 +27,12 @@ mk_deck = shuffle' mk_deck_order 52
 
 printC a = putStr . show $ a
 
---deal game = game
-
-deal game@(Game count (CardState hands board deck) pot players) = (Game count (CardState hands board (drop (fromIntegral (count * 2)) deck)) pot (Map.fromList (dealHelper (map id (Map.toList players)) deck)))
-
-
+deal game@(Game count (CardState board deck) pot players) = (Game count (CardState board (drop (fromIntegral (count * 2)) deck)) pot (Map.fromList (dealHelper (map id (Map.toList players)) deck)))
 
 dealHelper ((pos, (Player name hand0 pot)) : players) deck = (pos, (Player name (take 2 deck) pot)) :  dealHelper (tail players) (drop 2 deck)
 dealHelper _ deck = []
 
-placeCard cardCount (Game ppcount (CardState hands board deck0) pot players) = let deck = (tail deck0) in Game ppcount (CardState hands (board ++ (take cardCount deck)) (drop cardCount deck)) pot players
+placeCard cardCount (Game ppcount (CardState board deck0) pot players) = let deck = (tail deck0) in Game ppcount (CardState (board ++ (take cardCount deck)) (drop cardCount deck)) pot players
 
 flop = placeCard 3
 turn = placeCard 1
@@ -103,13 +99,13 @@ mk_players count = Map.fromList [tp | tp <- zip [1 .. count] [Player (show pInde
 
 mk_game playerCount = do
     deck <- mk_random_deck
-    return $ Game playerCount (CardState [] [] deck) (Pot 0) $ mk_players playerCount
+    return $ Game playerCount (CardState [] deck) (Pot 0) $ mk_players playerCount
 
 mk_random_deck = do
     random <- getStdGen
     return $ mk_deck random
     
-showHands game@(Game count (CardState hands board deck) pot players) = do
+showHands game@(Game count (CardState board deck) pot players) = do
     return 1
 
 main = do
@@ -126,7 +122,7 @@ main = do
         game <- betRound game 4
         game <- return $ flop game
         game <- return $ turn game
-        (Game count (CardState hands board deck) pot players) <- return (river game)
+        (Game count (CardState board deck) pot players) <- return (river game)
         print players 
 
 
