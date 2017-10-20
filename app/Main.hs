@@ -27,10 +27,10 @@ mk_deck = shuffle' mk_deck_order 52
 
 printC a = putStr . show $ a
 
-deal game@(Game count (CardState board deck) pot players) = (Game count (CardState board (drop (fromIntegral (count * 2)) deck)) pot (Map.fromList (dealHelper (map id (Map.toList players)) deck)))
+deal game@(Game count (CardState board deck) pot players) = (Game count (CardState board (drop (fromIntegral (count * 2)) deck)) pot (Map.fromList (dealHelper (Map.toList players) deck)))
 
-dealHelper ((pos, (Player name hand0 pot)) : players) deck = (pos, (Player name (take 2 deck) pot)) :  dealHelper (tail players) (drop 2 deck)
-dealHelper _ deck = []
+dealHelper (p@(pos, (Player name _ pot)):xs) deck = (pos, (Player name (take 2 deck) pot)) : (dealHelper xs (drop 2 deck))
+dealHelper [] deck = []
 
 placeCard cardCount (Game ppcount (CardState board deck0) pot players) = let deck = (tail deck0) in Game ppcount (CardState (board ++ (take cardCount deck)) (drop cardCount deck)) pot players
 
@@ -95,36 +95,54 @@ askMoney index game@(Game g1 g2 g3 players) text = do
             print "not enough funds, please enter another amount" 
             askMoney index game text
 
-mk_players count = Map.fromList [tp | tp <- zip [1 .. count] [Player (show pIndex) [] pot | (pIndex, pot) <- zip [1 .. count] (mk_pots $ fromIntegral count) ]]
+mk_players names = Map.fromList [tp | tp <- zip [1 .. ] [Player name [] pot | name <- names, let pot = (Pot 100)  ]]
 
-mk_game playerCount = do
+mk_game playerCount names = do
     deck <- mk_random_deck
-    return $ Game playerCount (CardState [] deck) (Pot 0) $ mk_players playerCount
+    return $ Game playerCount (CardState [] deck) (Pot 0) $ mk_players names
 
 mk_random_deck = do
     random <- getStdGen
     return $ mk_deck random
+
+showHands game@(Game _ _ _ players) = mapM_ (\(Player name hand pot) -> do 
+    printC "Player: "; printC name; printC " cards: "; print hand;) $ map (\(pos, player) -> player) $ Map.toList players
+
+printBoard state (Game _ (CardState board _) _ _) = do
+    printC state
+    print board
+
+collectNames total = collectNamesHelp total 1 []
+
+collectNamesHelp total count names | count <= total = do
+    printC "Name for player "
+    printC count
+    print ":"
+    name <- getLine
+    print ""
+    collectNamesHelp total (count + 1) (name:names)
+                        | otherwise = do
+                            return names
     
-showHands game@(Game count (CardState board deck) pot players) = do
-    return 1
 
 main = do
     print "how many players?"
     pl <- getLine
     playerCount <- return (read pl :: Integer)
-
     if playerCount > 22
         then print "max players is 22"
     else do
-        game <- mk_game playerCount
+        names <- collectNames playerCount
+        game <- mk_game playerCount names
         game <- return $ deal game
         showHands game
-        game <- betRound game 4
+        --game <- betRound game 4 -- 4 is hard coded, update based on state
         game <- return $ flop game
+        printBoard "Flop: " game
         game <- return $ turn game
-        (Game count (CardState board deck) pot players) <- return (river game)
-        print players 
-
+        printBoard "Turn: " game
+        game <- return $ river game
+        printBoard "River: " game
 
 {- select amount of players
         - deal 2 to each
